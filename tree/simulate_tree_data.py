@@ -6,7 +6,7 @@ import os
 
 def simulate_tree_data(base_rate, alpha_true, meas_std, node_list, gamma_list,
                        data_per_leaf_test=0, add_cov=True, noise_density='gaussian',
-                       center_u=True, add_noise=True, seed=617, file_path=None):
+                       center_u=True, add_noise=True, seed=617, file_path=None, cov_noise=True):
     n_cov = len(alpha_true)
     np.random.seed(seed)
     data = []
@@ -18,7 +18,10 @@ def simulate_tree_data(base_rate, alpha_true, meas_std, node_list, gamma_list,
             X = np.zeros((n_leaf + data_per_leaf_test,n_cov))
             if add_cov:
                 np.random.seed(int(hash(path)%5000))  # need to fix hashseed also to fix covariate values
-                X += np.random.randn(n_leaf + data_per_leaf_test, n_cov) + cov_mean
+                if cov_noise:
+                    X += np.random.randn(n_leaf + data_per_leaf_test, n_cov)/(level+1) + cov_mean
+                else:
+                    X += cov_mean
                 X_all.append(X)
             for i in range(n_leaf + data_per_leaf_test):
                 row = {}
@@ -40,6 +43,7 @@ def simulate_tree_data(base_rate, alpha_true, meas_std, node_list, gamma_list,
             if center_u:
                 u = u - np.mean(u)
             cov_means = np.linspace(cov_mean - 0.5/(level+1), cov_mean + 0.5/(level+1), K)
+            #print(path, cov_means)
             for k in range(K):
                 if node_list:
                     recurse(node_list[k], path+'_'+str(k+1), level+1, cov_means[k])
@@ -49,7 +53,7 @@ def simulate_tree_data(base_rate, alpha_true, meas_std, node_list, gamma_list,
                             row['true_val'] *= np.exp(u[k])
                             row['level_'+str(level)+'_u'] = u[k]
 
-    recurse(node_list, '1', 0, 0)
+    recurse(node_list, '1', 0, 1.)
 
     if add_noise:
         for row in data:

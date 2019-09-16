@@ -9,112 +9,130 @@ program = '/home/prefix/dismod_at.release/bin/dismod_at'
 
 class SimDB:
 
-    def __init__(self, df, node_list, n_cov, node_holdout=None):
+    def __init__(self, df, node_list, n_cov, nodes_holdout=None, leaves_holdout=None):
         self.node_list = node_list
         self.n_cov = n_cov
         self.zerosum = False
         self.root = '1'
 
         self.create_node_table()
-        self.createDataTable(df)
-        if node_holdout is not None:
-            self.holdoutBranch(df, node_holdout)
+        if nodes_holdout is not None:
+            for node in nodes_holdout:
+                self.holdout_branch(df, node)
+        if leaves_holdout is not None:
+            for leaf in leaves_holdout:
+                self.holdout_leaf_data(df, leaf)
+
+        self.create_data_table(df)
         self.reset()
 
     def reset(self):
-        self.createDefaultTables()
-        self.createAvgintTable()
+        self.create_default_tables()
+        self.create_avgint_table()
         self.root = '1'
         self.zerosum = False
 
     def create_node_table(self):
-        self.node_table = [{'name':'1','parent':''}]
-        self.node_1level_above_leaf = []
-        self.leaves = []
+        self.node_table = [{'name': '1', 'parent': ''}]
+        self.node_one_level_above_leaves = []
+        self.node_leaves = []
+        self.node_height = {}
+        self.node_depth = {}
+        self.node_depth['1'] = 0
         self.node_parent_children = collections.defaultdict(list)
+        self.node_child_parent = {}
         self.nodes_all = set()
         self.nodes_size = {}
+        self.node_has_leaves = set([])
 
-        def recurse(node_list,path):
-            if all([type(x) is int for x in node_list]): # all children are leaf nodes
-                self.node_1level_above_leaf.append(path)
+        def recurse(node_list, path):
+            if any([type(x) is int for x in node_list]):  # all children are leaf nodes
+                self.node_one_level_above_leaves.append(path)
             K = len(node_list)
             count = 0
+            height = 0
             for k in range(K):
                 kid_path = path+'_'+str(k+1)
-                self.node_table.append({'name': kid_path, 'parent':path})
+                self.node_depth[kid_path] = self.node_depth[path] + 1
+                self.node_table.append({'name': kid_path, 'parent': path})
                 self.nodes_all.add(kid_path)
                 self.node_parent_children[path].append(kid_path)
+                self.node_child_parent[kid_path] = path
                 if type(node_list[k]) is list:
                     recurse(node_list[k], kid_path)
-                elif path not in self.node_1level_above_leaf:
-                    # to include standalone leaves
-                    self.node_1level_above_leaf.append(kid_path)
-                    self.leaves.append(kid_path)
-                    self.nodes_size[kid_path] = node_list[k]
                 else:
-                    self.leaves.append(kid_path)
+                    self.node_leaves.append(kid_path)
+                    self.node_height[kid_path] = 0
                     self.nodes_size[kid_path] = node_list[k]
                 count += self.nodes_size[kid_path]
+                height = max(height, self.node_height[kid_path])
             self.nodes_size[path] = count
+            self.node_height[path] = height + 1
 
-        recurse(self.node_list,'1')
+        recurse(self.node_list, '1')
 
-    def createDataTable(self, df):
+    def create_data_table(self, df):
         self.data_table = list()
-        row = {'integrand': 'Sincidence', 'weight': 'constant',
-                'time_lower':0.0, 'time_upper': 0.0, 'density': 'gaussian',
-                'age_lower': 0.0, 'age_upper': 0.0, 'one': 1.0, 'a': 1.0}
-        for i,r in df.iterrows():
+        row = {'integrand': 'Sincidence',
+               'weight': 'constant',
+               'time_lower': 0.0, 'time_upper': 0.0,
+               'density': 'gaussian',
+               'age_lower': 0.0, 'age_upper': 0.0,
+               'one': 1.0, 'a': 1.0}
+        for i, r in df.iterrows():
             row['node'] = r['node']
             row['meas_value'] = r['meas_val']
-            #row['true_value'] = r['true_val']
             row['meas_std'] = r['meas_std']
             row['hold_out'] = r['hold_out']
             for j in range(self.n_cov):
                 row['cov'+str(j+1)] = r['cov'+str(j+1)]
             self.data_table.append(copy.copy(row))
 
-    def holdoutBranch(self, df, node):
-        nodes = set()
-        stack = [node]
-        while stack:
-            v = stack.pop()
-            if v not in self.leaves:
-                stack.extend(self.node_parent_children[v])
-                if v in self.node_1level_above_leaf:
-                    self.node_1level_above_leaf.remove(v)
-            else:
-                nodes.add(v)
-        for v in nodes:
-            self.leaves.remove(v)
-            if v in self.node_1level_above_leaf:
-                self.node_1level_above_leaf.remove(v)
-
-        parent = '_'.join(node.split('_')[:-1])
-        self.node_parent_children[parent].remove(node)
-        if all([(kid not in self.node_parent_children) for kid in self.node_parent_children[parent]]):
-            if parent not in self.node_1level_above_leaf:
-                self.node_1level_above_leaf.append(parent)
-                for kid in self.node_parent_children[parent]:
-                    if kid in self.node_1level_above_leaf:
-                        self.node_1level_above_leaf.remove(kid)
-        else:
-            self.node_1level_above_leaf.append(parent)
-
-        for i, row in enumerate(self.data_table):
-            if row['node'] in nodes:
-                self.data_table[i]['hold_out'] = True
+    def holdout_leaf_data(self, df, leaves):
+        node, percent = leaves[0], leaves[1]
+        assert node in self.node_leaves
+        n = np.round(self.nodes_size[node]*percent)
+        count = 0
 
         for i, row in df.iterrows():
-            if row['node'] in nodes:
+            if row['node'] == node and count < n:
+                df.loc[i, 'hold_out'] = True
+                count += 1
+
+
+    def holdout_branch(self, df, node):
+        nodes_to_remove = set()
+        stack = [node]
+        parent = self.node_child_parent[node]
+        self.node_has_leaves.add(parent)
+        while stack:
+            v = stack.pop()
+            if v not in self.node_leaves:
+                stack.extend(self.node_parent_children[v])
+                if v in self.node_one_level_above_leaves:
+                    self.node_one_level_above_leaves.remove(v)
+                del self.node_parent_children[v]
+                self.node_has_leaves.discard(v)
+            else:
+                nodes_to_remove.add(v)
+            del self.node_child_parent[v]
+            del self.node_height[v]
+            del self.node_depth[v]
+        for v in nodes_to_remove:
+            self.node_leaves.remove(v)
+
+        self.node_parent_children[parent].remove(node)
+        self.node_height[parent] = max([self.node_height[v] for v in self.node_parent_children[parent]]) + 1
+
+        for i, row in df.iterrows():
+            if row['node'] in nodes_to_remove:
                 df.loc[i, 'hold_out'] = True
 
-    def changeMeasDensity(self, density):
+    def change_meas_density(self, density):
         for i, row in enumerate(self.data_table):
             self.data_table[i].update(density)
 
-    def createAvgintTable(self, use_indicators=False):
+    def create_avgint_table(self, use_indicators=False):
         assert self.option_table[0]['name'] == 'parent_node_name'
         node = self.option_table[0]['value']
         self.avgint_table = []
@@ -126,8 +144,8 @@ class SimDB:
               'time_upper':  0.0,
               'one':         1.0,
               'a':          1.0,
-              'age_lower' : 0.0,
-              'age_upper' : 0.0,
+              'age_lower': 0.0,
+              'age_upper': 0.0,
             }
         for j in range(self.n_cov):
             row['cov'+str(j+1)] = 0.0
@@ -145,16 +163,16 @@ class SimDB:
             row['integrand'] = 'mulcov_'+str(j+2)
             self.avgint_table.append(copy.copy(row))
 
-    def createDefaultTables(self):
-        self.age_list =[0.0, 5.0]
+    def create_default_tables(self):
+        self.age_list = [0.0, 5.0]
         self.time_list = [0.0]
-        self.rate_table = [{'name':'iota', 'parent_smooth':'smooth_iota',
-                            'child_smooth':'smooth_iota_child'}]
+        self.rate_table = [{'name': 'iota', 'parent_smooth': 'smooth_iota',
+                            'child_smooth': 'smooth_iota_child'}]
 
-        self.covariate_table = [{'name':'one', 'reference': 0.0},
-                                 {'name': 'a', 'reference': 0.0}]
+        self.covariate_table = [{'name': 'one', 'reference': 0.0},
+                                {'name': 'a', 'reference': 0.0}]
         for j in range(self.n_cov):
-            self.covariate_table.append({'name':'cov'+str(j+1), 'reference':0.0})
+            self.covariate_table.append({'name': 'cov'+str(j+1), 'reference':0.0})
 
         self.mulcov_table = [{
             'covariate': 'one',
@@ -177,26 +195,26 @@ class SimDB:
 
         self.smooth_table = [
               {
-                   'name' :    'smooth_iota',
+                   'name':    'smooth_iota',
                    'age_id':   [0],
                    'time_id':  [0],
-                   'fun':      lambda a,t:('prior_iota_value',None,None)
-              },{
-                   'name' :    'smooth_iota_child',
+                   'fun': lambda a, t:('prior_iota_value', None, None)
+              }, {
+                   'name':    'smooth_iota_child',
                    'age_id':   [0],
                    'time_id':  [0],
-                   'fun':      lambda a,t:('prior_iota_child',None,None),
+                   'fun': lambda a, t:('prior_iota_child', None, None),
                    'mulstd_value_prior_name': 'prior_lambda'
-              },{
+              }, {
                    'name':     'smooth_gamma',
                    'age_id':   [0],
                    'time_id':  [0],
-                   'fun':      lambda a,t:('prior_gamma',None,None)
+                   'fun': lambda a, t:('prior_gamma', None, None)
               }, {
                    'name':     'smooth_a',
                    'age_id':   [0],
                    'time_id':  [0],
-                   'fun':      lambda a,t: ('prior_a', None, None)
+                   'fun': lambda a, t: ('prior_a', None, None)
               }
              ]
 
@@ -205,7 +223,7 @@ class SimDB:
                  'name':     'smooth_alpha_'+str(j+1),
                  'age_id':   [0],
                  'time_id':  [0],
-                 'fun':      lambda a,t,j=j:('prior_alpha_'+str(j+1),None,None)
+                 'fun': lambda a, t, j=j: ('prior_alpha_'+str(j+1), None, None)
             })
 
         self.prior_table = [
@@ -215,18 +233,18 @@ class SimDB:
                    'lower':   1e-4,
                    'upper':   1.,
                    'mean':    .05,
-              },{
+              }, {
                    'name':    'prior_iota_child',
                    'density': 'gaussian',
                    'mean':     0.0,
                    'std':      .5,
-              },{
+              }, {
                    'name':    'prior_lambda',
                    'density': 'uniform',
                    'mean':     1.0,
                    'lower':    1.0,
                    'upper':    1.0,
-              },{
+              }, {
                    'name':    'prior_gamma',
                    'density': 'uniform',
                    'mean':     0.0,
@@ -245,56 +263,51 @@ class SimDB:
                  'name':    'prior_alpha_'+str(j+1),
                  'density': 'uniform',
                  'mean':     0.0,
-                 'lower':   -1.0,
+                 'lower': -1.0,
                  'upper':    1.0,
             })
 
-        self.integrand_table = [{'name':'Sincidence'}]
+        self.integrand_table = [{'name': 'Sincidence'}]
         for j in range(self.n_cov):
             self.integrand_table.append({'name': 'mulcov_'+str(j+2)})
 
-        self.weight_table = [{'name':'constant',  'age_id':[0], 'time_id':[0],
-                              'fun':lambda a,t:1.0 }]
+        self.weight_table = [{'name': 'constant',  'age_id': [0], 'time_id':[0],
+                              'fun':lambda a, t:1.0}]
         self.option_table = [
-                  { 'name':'parent_node_name',      'value':'1'},
-                  { 'name': 'random_seed', 'value': '0'},
-                  #{ 'name':'rate_case',             'value':'iota_pos_rho_zero'},
-                  #{ 'name': 'zero_sum_random',      'value':'iota'},
-                  { 'name': 'meas_noise_effect',    'value':'add_var_scale_all'},
-                  { 'name':'quasi_fixed',           'value':'false'},
-                  { 'name':'max_num_iter_fixed',    'value':'300'},
-                  { 'name':'print_level_fixed',     'value': '5'},
-                  { 'name':'tolerance_fixed',       'value':'1e-4'},
+                  {'name': 'parent_node_name',      'value': '1'},
+                  {'name': 'random_seed', 'value': '0'},
+                  {'name': 'rate_case',             'value': 'iota_pos_rho_zero'},
+                  {'name': 'meas_noise_effect',    'value': 'add_var_scale_all'},
+                  {'name': 'quasi_fixed',           'value': 'false'},
+                  {'name': 'max_num_iter_fixed',    'value': '300'},
+                  {'name': 'print_level_fixed',     'value': '5'},
+                  {'name': 'tolerance_fixed',       'value': '1e-4'},
              ]
 
         self.avgint_table = list()
 
-    def useLambda(self):
-        #self.use_lambda = True
+    def use_lambda(self):
         self.prior_table[2]['lower'] = 1e-4
         self.prior_table[2]['upper'] = 10.
-        #self.prior_table[3]['lower'] = 0.0
-        #self.prior_table[3]['upper'] = 0.0
 
-    def disableLambda(self):
+    def disable_lambda(self):
         self.prior_table[2]['lower'] = 1.
         self.prior_table[2]['upper'] = 1.
 
-    def useGamma(self):
-        self.prior_table[3]['upper'] = 100
+    def use_gamma(self):
+        self.prior_table[3]['upper'] = 10
 
-    def disableGamma(self):
+    def disable_gamma(self):
         self.prior_table[3]['upper'] = 0.0
 
-    def addIntercept(self):
-        #self.add_intercept = True
+    def add_intercept(self):
         self.prior_table[4]['lower'] = -10.
         self.prior_table[4]['upper'] = 10.
 
-    def changeREstd(self, u_std):
+    def change_re_std(self, u_std):
         self.prior_table[1]['std'] = u_std
 
-    def passPriors(self, name, mean, std, density):
+    def pass_priors(self, name, mean, std, density):
         start = 0
         n = 1
         if name == 'alpha':
@@ -313,66 +326,62 @@ class SimDB:
                 self.prior_table[start+i]['lower'] = mean[i]
                 self.prior_table[start+i]['upper'] = mean[i]
 
-    def updateParentNode(self, node):
+    def update_parent_node(self, node):
         self.root = node
         assert self.option_table[0]['name'] == 'parent_node_name'
         self.option_table[0]['value'] = node
-        self.createAvgintTable()
+        self.create_avgint_table()
 
-    def useIndicators(self, node, depth=0):
-        """ in progress """
+    def use_indicators(self, node, use_gamma=False):
         kids = self.node_parent_children[node]
         ancestor = {}
         for kid in kids:
             stack = [kid]
             while stack:
-                n = stack.pop()
-                if self.node_parent_children[n] == []:
-                    assert n in self.leaves
-                    ancestor[n] = kid
+                v = stack.pop()
+                if not self.node_parent_children[v]:
+                    assert v in self.node_leaves
+                    ancestor[v] = kid
                 else:
-                    assert n not in self.leaves
-                    stack.extend(self.node_parent_children[n])
-            self.covariate_table.append({'name':kid, 'reference': 0.0})
-            self.mulcov_table.append({'covariate': kid, 'type':'rate_value',
-                                      'effected':'iota', 'smooth': 'smooth_ind'})
+                    assert v not in self.node_leaves
+                    stack.extend(self.node_parent_children[v])
+            self.covariate_table.append({'name': kid, 'reference': 0.0})
+            self.mulcov_table.append({'covariate': kid, 'type': 'rate_value',
+                                      'effected': 'iota', 'smooth': 'smooth_ind'})
         self.smooth_table.append({'name': 'smooth_ind', 'age_id': [0],
-                                  'time_id': [0], 'fun': lambda a,t: ('prior_ind', None, None)})
+                                  'time_id': [0], 'fun': lambda a, t: ('prior_ind', None, None)})
         self.prior_table.append({'name': 'prior_ind', 'density': 'uniform', 'mean': 0.0})
 
-        # need to diable intercept and base rate est
+        # disable intercept
         self.prior_table[4]['lower'] = 0.
         self.prior_table[4]['upper'] = 0.
         self.prior_table[4]['mean'] = 0.
+
+        # disable base rate est
         self.prior_table[0]['lower'] = 1.
         self.prior_table[0]['mean'] = 1.
         self.prior_table[0]['upper'] = 1.
-        #self.addZeroSum()
 
-
-        #self.prior_table[2]['lower'] = 1.
-        #self.prior_table[2]['upper'] = 1.
-        #self.prior_table[2]['mean'] = 1.
-        self.prior_table[3]['lower'] = 0.
-        self.prior_table[3]['mean'] = 0.
-        self.prior_table[3]['upper'] = 0.
-
+        # disable gamma
+        if not use_gamma:
+            self.prior_table[3]['lower'] = 0.
+            self.prior_table[3]['mean'] = 0.
+            self.prior_table[3]['upper'] = 0.
 
         for i, row in enumerate(self.data_table):
-            self.data_table[i].update({kid:0.0 for kid in kids})
+            self.data_table[i].update({kid: 0.0 for kid in kids})
             self.data_table[i][ancestor[row['node']]] = 1.0
 
-        # TODO: update avgint table
-        self.createAvgintTable(use_indicators=True)
+        self.create_avgint_table(use_indicators=True)
 
-    def fixRandomSeed(self, seed):
+    def fix_random_seed(self, seed):
         assert self.option_table[1]['name'] == 'random_seed'
         self.option_table[1]['value'] = seed
 
-    def addZeroSum(self):
-        if self.zerosum == False:
+    def add_zero_sum(self):
+        if not self.zerosum:
             self.zerosum = True
-            self.option_table.append({ 'name': 'zero_sum_random', 'value':'iota'})
+            self.option_table.append({'name': 'zero_sum_random', 'value': 'iota'})
 
     def initialize(self, file_name, to_csv=False):
         dismod_at.create_database(
@@ -395,6 +404,6 @@ class SimDB:
 
         if to_csv:
             flag = subprocess.call([program, file_name, 'init'])
-            if flag != 0 :
+            if flag != 0:
                 sys.exit('command failed: flag = ' + str(flag))
             dismod_at.db2csv_command(file_name)
