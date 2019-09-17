@@ -58,6 +58,7 @@ class MixETree:
         if depth == 0 or fit_fixed:
             system_command([program, file_name, 'fit', 'fixed'], verbose)
             system_command([program, file_name, 'set', 'start_var', 'fit_var'], verbose)
+            system_command([program, file_name, 'set', 'scale_var', 'fit_var'], verbose)
         if depth > 0 and fit_both:
             system_command([program, file_name, 'fit', 'both'], verbose)
         if write_to_csv:
@@ -170,7 +171,7 @@ class MixETree:
         #             self.df.loc[i, 'avgint_s'] = avgint[i]
         #             self.df.loc[i, 'residual_s'] = residual[i]
 
-    def fit_root(self, priors=None, fit_fixed=True, fit_both=True, use_indicators=False):
+    def fit_root(self, priors=None, fit_fixed=False, fit_both=True, use_indicators=False):
         t_start = time.time()
         file_name = self.file_path + 'node_' + self.db.root + '.db'
         if priors is not None:

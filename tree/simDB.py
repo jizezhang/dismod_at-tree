@@ -98,6 +98,7 @@ class SimDB:
             if row['node'] == node and count < n:
                 df.loc[i, 'hold_out'] = True
                 count += 1
+                df.loc[i, 'hold_out_branch'] = node
 
 
     def holdout_branch(self, df, node):
@@ -127,6 +128,7 @@ class SimDB:
         for i, row in df.iterrows():
             if row['node'] in nodes_to_remove:
                 df.loc[i, 'hold_out'] = True
+                df.loc[i, 'hold_out_branch'] = node
 
     def change_meas_density(self, density):
         for i, row in enumerate(self.data_table):
@@ -237,7 +239,7 @@ class SimDB:
                    'name':    'prior_iota_child',
                    'density': 'gaussian',
                    'mean':     0.0,
-                   'std':      .5,
+                   'std':      .7,
               }, {
                    'name':    'prior_lambda',
                    'density': 'uniform',
