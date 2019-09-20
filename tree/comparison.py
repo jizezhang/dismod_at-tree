@@ -4,7 +4,7 @@ import time
 import matplotlib.pyplot as plt
 
 
-def compare(data, node_list, alpha_true, iota_true, file_path, save_to, cv=0, holdout_nodes=None):
+def compare(data, node_list, alpha_true, iota_true, file_path, save_to, cv=0, holdout_nodes=None, zero_sum=True):
     n_data = data.shape[0]
     n_cov = len(alpha_true)
     if cv > 0:
@@ -19,7 +19,7 @@ def compare(data, node_list, alpha_true, iota_true, file_path, save_to, cv=0, ho
 
     t0 = time.time()
     mtr.fit_low_level('oracle', {'iota': ([iota_true], [0], 'uniform'), 'alpha': (alpha_true, [0] * n_cov, 'uniform')},
-                    zero_sum=True, use_lambda=True)
+                    zero_sum=zero_sum, use_lambda=True)
     #print('fit with true alpha, elapsed', time.time() - t0)
     elapsed_times.append(time.time() - t0)
     alphas_fit_all.append(alpha_true)
@@ -28,14 +28,14 @@ def compare(data, node_list, alpha_true, iota_true, file_path, save_to, cv=0, ho
     mtr = MixETree(data, node_list, n_cov, file_path+'bottom_fit/', holdout_nodes)
     mtr.reset()
     t0 = time.time()
-    mtr.fit_low_level('bottom', zero_sum=True, use_lambda=True)
+    mtr.fit_low_level('bottom', zero_sum=zero_sum, use_lambda=True)
     alphas_fit = []
     for i in range(n_cov):
         values = [x['cov' + str(i + 1)] for k, x in mtr.alpha_est.items()]
         alphas_fit.append(np.median(values))
     #mtr.df['bottom_avgint'] = 0.0
     #mtr.df['bottom_res'] = 0.0
-    mtr.fit_low_level('bottom', {'alpha': (alphas_fit, [0] * n_cov, 'uniform')}, zero_sum=True, use_lambda=True)
+    mtr.fit_low_level('bottom', {'alpha': (alphas_fit, [0] * n_cov, 'uniform')}, zero_sum=zero_sum, use_lambda=True)
     #print('direct bottom level fit, elapsed ', time.time() - t0)
     elapsed_times.append(time.time() - t0)
     alphas_fit_all.append(np.round(alphas_fit, 3))
@@ -44,7 +44,7 @@ def compare(data, node_list, alpha_true, iota_true, file_path, save_to, cv=0, ho
     mtr = MixETree(data, node_list, n_cov, file_path+'top_bottom/', holdout_nodes)
 
     t0 = time.time()
-    mtr.fit_no_sim('top-bottom', zero_sum=True, use_lambda=True)
+    mtr.fit_no_sim('top-bottom', zero_sum=zero_sum, use_lambda=True)
     #print('top-bottom fit, elapsed', time.time() - t0)
     elapsed_times.append(time.time() - t0)
 
@@ -57,7 +57,7 @@ def compare(data, node_list, alpha_true, iota_true, file_path, save_to, cv=0, ho
     mtr = MixETree(data, node_list, n_cov, file_path + 'top_bottom2/', holdout_nodes)
 
     t0 = time.time()
-    mtr.fit_no_sim('top-bottom2', zero_sum=True, use_lambda=True, no_leaf=True)
+    mtr.fit_no_sim('top-bottom2', zero_sum=zero_sum, use_lambda=True, no_leaf=True)
     # print('top-bottom fit, elapsed', time.time() - t0)
     elapsed_times.append(time.time() - t0)
 
@@ -70,7 +70,7 @@ def compare(data, node_list, alpha_true, iota_true, file_path, save_to, cv=0, ho
     mtr = MixETree(data, node_list, n_cov, file_path+'cascade/', holdout_nodes)
 
     t0 = time.time()
-    mtr.fit_sim('cascade', n_sim=10, use_lambda=False, zero_sum=True)
+    mtr.fit_sim('cascade', n_sim=10, use_lambda=False, zero_sum=zero_sum)
     #print('cascade fit, elapsed', time.time() - t0)
     elapsed_times.append(time.time() - t0)
 
@@ -85,7 +85,7 @@ def compare(data, node_list, alpha_true, iota_true, file_path, save_to, cv=0, ho
     mtr = MixETree(data, node_list, n_cov, file_path+'cascade_lambda/', holdout_nodes)
 
     t0 = time.time()
-    mtr.fit_sim('cascade-lambda', n_sim=10, use_lambda=True, zero_sum=True)
+    mtr.fit_sim('cascade-lambda', n_sim=10, use_lambda=True, zero_sum=zero_sum)
     #print('cascade fit with lambda, elapsed', time.time() - t0)
     elapsed_times.append(time.time() - t0)
 
@@ -100,7 +100,7 @@ def compare(data, node_list, alpha_true, iota_true, file_path, save_to, cv=0, ho
     mtr = MixETree(data, node_list, n_cov, file_path + 'cascade_skip/', holdout_nodes)
 
     t0 = time.time()
-    mtr.fit_sim('cascade-skip', n_sim=10, use_lambda=False, zero_sum=True, skip=True)
+    mtr.fit_sim('cascade-skip', n_sim=10, use_lambda=False, zero_sum=zero_sum, skip=True)
     # print('cascade fit with lambda, elapsed', time.time() - t0)
     elapsed_times.append(time.time() - t0)
 

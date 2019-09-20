@@ -114,7 +114,7 @@ class MixETree:
     def get_leaf_fit(self, col_prefix, is_leaf=False):
         data = pd.read_csv(self.file_path + 'data.csv')
         for i, row in data.iterrows():
-            assert row['node'] == self.df.loc[row['data_id'], 'leaf']
+            assert row['node'] == self.df.loc[int(row['data_id']), 'leaf']
             if row['node'] == row['child']:
                 #print('writing...', row['node'])
                 self.df.loc[row['data_id'], col_prefix+'_avgint'] = row['avgint']
@@ -190,10 +190,12 @@ class MixETree:
         # os.rename(self.file_path+'variable.csv',self.file_path+'ns_variable_1.csv')
         # os.rename(self.file_path+'data.csv',self.file_path+'ns_data_1.csv')
 
-    def fit_low_level(self, col_prefix, priors=None, zero_sum=False, use_lambda=False, fit_fixed=False, no_leaf=False):
+    def fit_low_level(self, col_prefix, priors=None, zero_sum=False, use_lambda=False, add_intercept=True,
+                      fit_fixed=False, no_leaf=False, fitted_nodes=None):
         t_start = time.time()
         tfit = 0.
-        self.db.add_intercept()
+        if add_intercept:
+            self.db.add_intercept()
         self.db.disable_gamma()
         if zero_sum:
             self.db.add_zero_sum()
@@ -205,12 +207,14 @@ class MixETree:
             for name, prior in priors.items():
                 self.db.pass_priors(name, prior[0], prior[1], prior[2])
 
-        fitted_nodes = set([])
+        fitted = set([])
+        if fitted_nodes is not None:
+            fitted = set(fitted_nodes)
 
         for node in self.node_has_leaves:
-            if node not in fitted_nodes and self.node_height[node] > 1:
+            if node not in fitted and self.node_height[node] > 1:
                 #print('node has leaves')
-                fitted_nodes.add(node)
+                fitted.add(node)
                 self.db.update_parent_node(node)
                 self.db.use_gamma()
                 file_name = self.file_path + 'ns_node_' + node + '.db'
@@ -224,9 +228,9 @@ class MixETree:
         self.db.disable_gamma()
         for node in self.node_one_level_above_leaves:
             t0 = time.time()
-            if node not in fitted_nodes and (no_leaf or self.node_height[node] == 1):
+            if node not in fitted and (no_leaf or self.node_height[node] == 1):
                 #print('node parent level')
-                fitted_nodes.add(node)
+                fitted.add(node)
                 self.db.update_parent_node(node)
                 file_name = self.file_path + 'ns_node_' + node + '.db'
                 self.fit(file_name, fit_fixed=fit_fixed)
@@ -268,7 +272,8 @@ class MixETree:
             [self.alpha_est['1']['cov' + str(j + 1)] for j in range(self.n_cov)], [0] * self.n_cov, 'uniform'),
             'iota': ([self.base_rate_est['1']], [0], 'uniform')}
         self.db.reset()
-        self.fit_low_level(col_prefix, priors, no_leaf=no_leaf, zero_sum=zero_sum, use_lambda=use_lambda)
+        self.fit_low_level(col_prefix, priors, no_leaf=no_leaf, zero_sum=zero_sum,
+                           use_lambda=use_lambda, fitted_nodes=['1'])
 
     def simulate(self, node, file_name, n_sim=10):
         N_str = str(n_sim)

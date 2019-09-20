@@ -19,7 +19,7 @@ def simulate_tree_data(base_rate, alpha_true, meas_std, node_list, gamma_list,
             if add_cov:
                 np.random.seed(int(hash(path)%5000))  # need to fix hashseed also to fix covariate values
                 if cov_noise:
-                    X += np.random.randn(n_leaf + data_per_leaf_test, n_cov)/(level+1) + cov_mean
+                    X += np.random.randn(n_leaf + data_per_leaf_test, n_cov)/(2*level) + cov_mean
                 else:
                     X += cov_mean
                 X_all.append(X)
