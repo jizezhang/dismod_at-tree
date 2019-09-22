@@ -155,17 +155,22 @@ class Coverage:
         ydraws_obs = defaultdict(list)
         ydraws_miss_branch = defaultdict(dict)
         ydraws_miss_leaves = defaultdict(list)
+
+        u_samples = {}
+        for node in self.holdout_nodes:
+            parent = '_'.join(node.split('_')[:-1])
+            samples = []
+            for kid in self.node_parent_children[parent]:
+                samples.extend(u_draws[kid])
+            u_std = np.std(samples)
+            u_samples[node] = np.random.randn(n_draws)*u_std
+
         for i, row in self.data.iterrows():
             if row['hold_out'] and row['hold_out_branch'] != row['node']:
                 node = row['hold_out_branch']
                 parent = '_'.join(node.split('_')[:-1])
                 y_draws = base_rate_draws[parent]*np.ones(n_draws)
-                u_samples = []
-                for kid in self.node_parent_children[parent]:
-                    u_samples.extend(u_draws[kid])
-                u_std = np.std(u_samples)
-                print(node, row['node'], u_std)
-                y_draws *= np.exp(np.random.randn(n_draws)*u_std)
+                y_draws *= np.exp(u_samples[node])
                 for name, values in alpha_draws[parent].items():
                     if name != 'a':
                         y_draws *= np.exp(values*row[name])
@@ -204,7 +209,8 @@ class Coverage:
 
         return ydraws_obs, ydraws_miss_leaves, ydraws_miss_branch
 
-    def plot_draws(self, method, ydraws_obs, ydraws_miss_leaves=None, ydraws_miss_branch=None, samples_per_type=2):
+    def plot_draws(self, method, ydraws_obs, ydraws_miss_leaves=None, ydraws_miss_branch=None,
+                   samples_per_type=2, range=None):
         n_plots = 1
         if ydraws_miss_leaves is not None:
             n_plots += 1
@@ -231,6 +237,8 @@ class Coverage:
         bp = axs[0].boxplot(samples_draws_obs, patch_artist=True, labels=labels_obs)
         axs[0].set_xticklabels(labels_obs)
         axs[0].set_title('on observed data')
+        if range is not None:
+            axs[0].set_ylim(range)
 
         # ---- plot coverage for data missing from leaves -------
         k_plot = 1
@@ -240,6 +248,8 @@ class Coverage:
             bp = axs[k_plot].boxplot(samples_draws_miss_leaves, patch_artist=True, labels=labels_miss_leaves)
             axs[k_plot].set_xticklabels(labels_miss_leaves)
             axs[k_plot].set_title('on data missing from leaves')
+            if range is not None:
+                axs[k_plot].set_ylim(range)
 
             k_plot += 1
 
@@ -256,9 +266,8 @@ class Coverage:
     def get_y_coverage(self, method, n_draws=100, n_run=10, n_sim=10, plot=True, samples_per_plot=5):
         base_rate_dist, alpha_dist, u_dist = self.get_params_distribution(method, n_run, n_sim)
         print('--- drawing params samples --------')
-        base_rate_draws, alpha_draws, u_draws = self.draw_params(base_rate_dist, alpha_dist, u_dist, n_draws)
-        ydraws_obs, ydraws_miss_leaves, ydraws_miss_branch = self.draw_ys(base_rate_draws,
-                                                                          alpha_draws, u_draws, n_draws)
+        ydraws_obs, ydraws_miss_leaves, ydraws_miss_branch = self.draw_ys(base_rate_dist,
+                                                                          alpha_dist, u_dist, n_draws)
         if plot:
             self.plot_draws(method, ydraws_obs, ydraws_miss_leaves, ydraws_miss_branch, samples_per_plot)
 
