@@ -3,6 +3,7 @@ from scipy.stats import norm
 from mixetree import MixETree
 import time
 from collections import defaultdict
+import matplotlib.pyplot as plt
 
 
 class Coverage:
@@ -17,13 +18,16 @@ class Coverage:
         self.holdout_nodes = holdout_nodes
         self.holdout_leaves = holdout_leaves
         self.node_child_parent = None
+        self.node_parent_children = None
 
-    def fit_oracle(self, file_path, y=None):
+    def fit_oracle(self, file_path, iota_true, alpha_true, y=None):
         if y is not None:
             self.data['meas_val'] = y
         mtr = MixETree(self.data, self.node_list, self.n_cov, file_path, self.holdout_nodes, self.holdout_leaves)
         if self.node_child_parent is None:
             self.node_child_parent = mtr.node_child_parent
+        if self.node_parent_children is None:
+            self.node_parent_children = mtr.node_parent_children
         mtr.reset()
         mtr.fit_low_level('oracle',
                           {'iota': ([iota_true], [0], 'uniform'), 'alpha': (alpha_true, [0] * n_cov, 'uniform')},
@@ -36,14 +40,16 @@ class Coverage:
         mtr = MixETree(self.data, self.node_list, self.n_cov, file_path, self.holdout_nodes, self.holdout_leaves)
         if self.node_child_parent is None:
             self.node_child_parent = mtr.node_child_parent
+        if self.node_parent_children is None:
+            self.node_parent_children = mtr.node_parent_children
         mtr.reset()
-        mtr.fit_low_level('bottom', zero_sum=True, use_lambda=False, add_intercept=False)
+        mtr.fit_low_level('bottom', zero_sum=True, use_lambda=False, add_intercept=False, fit_fixed=True)
         alphas_fit = []
         for i in range(self.n_cov):
             values = [x['cov' + str(i + 1)] for k, x in mtr.alpha_est.items()]
             alphas_fit.append(np.median(values))
         mtr.fit_low_level('bottom', {'alpha': (alphas_fit, [0] * self.n_cov, 'uniform')},
-                          zero_sum=True, use_lambda=False, add_intercept=False)
+                          zero_sum=True, use_lambda=False, add_intercept=False, fit_fixed=True)
         # print('direct bottom level fit, elapsed ', time.time() - t0)
         return mtr.base_rate_est, mtr.alpha_est, mtr.u_est
 
@@ -53,6 +59,8 @@ class Coverage:
         mtr = MixETree(self.data, self.node_list, self.n_cov, file_path, self.holdout_nodes, self.holdout_leaves)
         if self.node_child_parent is None:
             self.node_child_parent = mtr.node_child_parent
+        if self.node_parent_children is None:
+            self.node_parent_children = mtr.node_parent_children
         mtr.fit_no_sim('top-bottom', zero_sum=True, use_lambda=False, no_leaf=no_leaf)
         return mtr.base_rate_est, mtr.alpha_est, mtr.u_est
 
@@ -62,6 +70,8 @@ class Coverage:
         mtr = MixETree(self.data, self.node_list, self.n_cov, file_path, self.holdout_nodes, self.holdout_leaves)
         if self.node_child_parent is None:
             self.node_child_parent = mtr.node_child_parent
+        if self.node_parent_children is None:
+            self.node_parent_children = mtr.node_parent_children
         mtr.fit_sim('cascade', n_sim=n_sim, use_lambda=use_lambda, zero_sum=True, skip=skip)
         return mtr.base_rate_est, mtr.alpha_est, mtr.u_est
 
@@ -119,58 +129,137 @@ class Coverage:
 
         return base_rate_dist, alpha_dist, u_dist
 
-    def draw_params(self, base_rate_dist, alpha_dist, u_dist, n_draw=1000):
+    def draw_params(self, base_rate_dist, alpha_dist, u_dist, n_draws=1000):
         base_rate_draws = {}
         for node, dist in base_rate_dist.items():
             mu, sigma = dist[0], dist[1]
-            base_rate_draws[node] = np.random.randn(n_draw)*sigma + mu
+            base_rate_draws[node] = np.random.randn(n_draws)*sigma + mu
 
         alpha_draws = {}
         for node, covs in alpha_dist.items():
             draws = {}
             for cov, dist in covs.items():
                 mu, sigma = dist[0], dist[1]
-                draws[cov] = np.random.randn(n_draw)*sigma + mu
+                draws[cov] = np.random.randn(n_draws)*sigma + mu
             alpha_draws[node] = draws
 
         u_draws = {}
         for node, dist in u_dist.items():
             mu, sigma = dist[0], dist[1]
-            u_draws[node] = np.random.randn(n_draw) * sigma + mu
+            u_draws[node] = np.random.randn(n_draws) * sigma + mu
 
         return base_rate_draws, alpha_draws, u_draws
 
-    def get_y_coverage(self, method, n_run=30, n_draw=1000, n_sim=10):
-        base_rate_dist, alpha_dist, u_dist = self.get_params_distribution(method, n_run, n_sim)
-        print('--- drawing params samples --------')
-        base_rate_draws, alpha_draws, u_draws = self.draw_params(base_rate_dist, alpha_dist, u_dist, n_draw)
+    def draw_ys(self, base_rate_dist, alpha_dist, u_dist, n_draws=100):
+        base_rate_draws, alpha_draws, u_draws = self.draw_params(base_rate_dist, alpha_dist, u_dist, n_draws)
+        ydraws_obs = defaultdict(list)
+        ydraws_miss_branch = defaultdict(dict)
+        ydraws_miss_leaves = defaultdict(list)
         for i, row in self.data.iterrows():
-            mean = row[method+'_avgint']
-            std = row['meas_std']
-            lb = norm.ppf(.025, mean, std)
-            ub = norm.ppf(.975, mean, std)
-            if row['hold_out']:
+            if row['hold_out'] and row['hold_out_branch'] != row['node']:
                 node = row['hold_out_branch']
-                parent = self.node_child_parent[node]
-                y_draws = base_rate_draws[parent]*np.exp(u_draws[node])
+                parent = '_'.join(node.split('_')[:-1])
+                y_draws = base_rate_draws[parent]*np.ones(n_draws)
+                u_samples = []
+                for kid in self.node_parent_children[parent]:
+                    u_samples.extend(u_draws[kid])
+                u_std = np.std(u_samples)
+                print(node, row['node'], u_std)
+                y_draws *= np.exp(np.random.randn(n_draws)*u_std)
                 for name, values in alpha_draws[parent].items():
-                    y_draws += values*row[name]
-                self.data.loc[i, 'cvr'] = len(np.where((y_draws >= lb) & (y_draws <= ub)))/float(n_draw)
+                    if name != 'a':
+                        y_draws *= np.exp(values*row[name])
+                    else:
+                        y_draws *= np.exp(values)
+                if row['node'] in ydraws_miss_branch[node]:
+                    ydraws_miss_branch[node][row['node']].append((i, row['true_val'], y_draws))
+                else:
+                    ydraws_miss_branch[node][row['node']] = [(i, row['true_val'], y_draws)]
             else:
                 node = row['node']
                 if node in base_rate_draws:
-                    y_draws = base_rate_draws[node]
+                    #print(node)
+                    y_draws = base_rate_draws[node]*np.ones(n_draws)
                     for name, values in alpha_draws[node].items():
-                        y_draws += values*row[name]
-                    self.data.loc[i, 'cvr'] = len(np.where((y_draws >= lb) & (y_draws <= ub)))/float(n_draw)
+                        if name != 'a':
+                            y_draws *= np.exp(values * row[name])
+                        else:
+                            y_draws *= np.exp(values)
+                    if row['hold_out']:
+                        ydraws_miss_leaves[node].append((i, row['true_val'], y_draws))
+                    else:
+                        ydraws_obs[node].append((i, row['true_val'], y_draws))
                 else:
                     parent = self.node_child_parent[node]
                     y_draws = base_rate_draws[parent] * np.exp(u_draws[node])
-                    for name, values in alpha_draws[parent]:
-                        y_draws += values * row[name]
-                    self.data.loc[i, 'cvr'] = len(np.where((y_draws >= lb) & (y_draws <= ub))) / float(n_draw)
+                    for name, values in alpha_draws[parent].items():
+                        if name != 'a':
+                            y_draws *= np.exp(values * row[name])
+                        else:
+                            y_draws *= np.exp(values)
+                    if row['hold_out']:
+                        ydraws_miss_leaves[node].append((i, row['true_val'], y_draws))
+                    else:
+                        ydraws_obs[node].append((i, row['true_val'], y_draws))
 
+        return ydraws_obs, ydraws_miss_leaves, ydraws_miss_branch
 
+    def plot_draws(self, method, ydraws_obs, ydraws_miss_leaves=None, ydraws_miss_branch=None, samples_per_type=2):
+        n_plots = 1
+        if ydraws_miss_leaves is not None:
+            n_plots += 1
+        if ydraws_miss_branch is not None:
+            n_plots += len(ydraws_miss_branch)
+        fig, axs = plt.subplots(1, n_plots, figsize=(n_plots*5, 5))
 
+        def draw_samples(ydraws):
+            draws_all = []
+            for node, draws in ydraws.items():
+                draws_all.extend([(node, draw) for draw in draws])
+            n = len(draws_all)
+            idx = np.random.choice(n, size=samples_per_type, replace=False)
+            samples = []
+            labels = []
+            for i in idx:
+                samples.append(draws_all[i][1][2] - draws_all[i][1][1])
+                labels.append(draws_all[i][0])
+            return samples, labels
 
+        # ---- plot coverage for observed data -----------
+        samples_draws_obs, labels_obs = draw_samples(ydraws_obs)
 
+        bp = axs[0].boxplot(samples_draws_obs, patch_artist=True, labels=labels_obs)
+        axs[0].set_xticklabels(labels_obs)
+        axs[0].set_title('on observed data')
+
+        # ---- plot coverage for data missing from leaves -------
+        k_plot = 1
+        if ydraws_miss_leaves is not None:
+            samples_draws_miss_leaves, labels_miss_leaves = draw_samples(ydraws_miss_leaves)
+
+            bp = axs[k_plot].boxplot(samples_draws_miss_leaves, patch_artist=True, labels=labels_miss_leaves)
+            axs[k_plot].set_xticklabels(labels_miss_leaves)
+            axs[k_plot].set_title('on data missing from leaves')
+
+            k_plot += 1
+
+        if ydraws_miss_branch is not None:
+            for node, node_draws in ydraws_miss_branch.items():
+                samples_draws_miss_branch, labels_miss_branch = draw_samples(node_draws)
+                bp = axs[k_plot].boxplot(samples_draws_miss_branch, patch_artist=True, labels=labels_miss_branch)
+                axs[k_plot].set_xticklabels(labels_miss_branch)
+                axs[k_plot].set_title('on data missing from branch '+node)
+                k_plot += 1
+        fig.suptitle('draw_value - true_value, method ' + method)
+        plt.show()
+
+    def get_y_coverage(self, method, n_draws=100, n_run=10, n_sim=10, plot=True, samples_per_plot=5):
+        base_rate_dist, alpha_dist, u_dist = self.get_params_distribution(method, n_run, n_sim)
+        print('--- drawing params samples --------')
+        base_rate_draws, alpha_draws, u_draws = self.draw_params(base_rate_dist, alpha_dist, u_dist, n_draws)
+        ydraws_obs, ydraws_miss_leaves, ydraws_miss_branch = self.draw_ys(base_rate_draws,
+                                                                          alpha_draws, u_draws, n_draws)
+        if plot:
+            self.plot_draws(method, ydraws_obs, ydraws_miss_leaves, ydraws_miss_branch, samples_per_plot)
+
+        return ydraws_obs, ydraws_miss_leaves, ydraws_miss_branch

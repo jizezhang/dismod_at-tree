@@ -263,6 +263,7 @@ class MixETree:
 
         # ---stage 1: fit root-----
         self.fit_root(use_indicators=use_indicators)
+        self.get_leaf_fit(col_prefix)
 
         os.rename(self.file_path + 'variable.csv', self.file_path + 'ns_variable_1.csv')
         os.rename(self.file_path + 'data.csv', self.file_path + 'ns_data_1.csv')
