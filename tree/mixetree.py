@@ -114,7 +114,10 @@ class MixETree:
     def get_leaf_fit(self, col_prefix, is_leaf=False):
         data = pd.read_csv(self.file_path + 'data.csv')
         for i, row in data.iterrows():
-            assert row['node'] == self.df.loc[int(row['data_id']), 'leaf']
+            try:
+                assert row['node'] == self.df.loc[int(row['data_id']), 'leaf']
+            except ValueError:
+                print(row['node'], row['data_id'])
             if row['node'] == row['child']:
                 #print('writing...', row['node'])
                 self.df.loc[row['data_id'], col_prefix+'_avgint'] = row['avgint']

@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.stats import norm
 from mixetree import MixETree
-import time
+import pandas as pd
 from collections import defaultdict
 import matplotlib.pyplot as plt
 
@@ -152,10 +152,12 @@ class Coverage:
 
     def draw_ys(self, base_rate_dist, alpha_dist, u_dist, n_draws=100):
         base_rate_draws, alpha_draws, u_draws = self.draw_params(base_rate_dist, alpha_dist, u_dist, n_draws)
-        ydraws_obs = defaultdict(list)
-        ydraws_miss_branch = defaultdict(dict)
-        ydraws_miss_leaves = defaultdict(list)
+        ydraws_obs = []
+        ydraws_miss_branch = defaultdict(list)
+        ydraws_miss_leaves = []
 
+
+        # ---- sample u for missing branches based on empirical variance from their siblings
         u_samples = {}
         for node in self.holdout_nodes:
             parent = '_'.join(node.split('_')[:-1])
@@ -169,17 +171,17 @@ class Coverage:
             if row['hold_out'] and row['hold_out_branch'] != row['node']:
                 node = row['hold_out_branch']
                 parent = '_'.join(node.split('_')[:-1])
-                y_draws = base_rate_draws[parent]*np.ones(n_draws)
+                y_draws = base_rate_draws[parent]*np.ones(n_draws)  # otherwise need deepcopy
                 y_draws *= np.exp(u_samples[node])
                 for name, values in alpha_draws[parent].items():
                     if name != 'a':
                         y_draws *= np.exp(values*row[name])
                     else:
                         y_draws *= np.exp(values)
-                if row['node'] in ydraws_miss_branch[node]:
-                    ydraws_miss_branch[node][row['node']].append((i, row['true_val'], y_draws))
+                if node in ydraws_miss_branch:
+                    ydraws_miss_branch[node].append((i, row['node'], row['true_val'], y_draws))
                 else:
-                    ydraws_miss_branch[node][row['node']] = [(i, row['true_val'], y_draws)]
+                    ydraws_miss_branch[node] = [(i, row['node'], row['true_val'], y_draws)]
             else:
                 node = row['node']
                 if node in base_rate_draws:
@@ -191,9 +193,9 @@ class Coverage:
                         else:
                             y_draws *= np.exp(values)
                     if row['hold_out']:
-                        ydraws_miss_leaves[node].append((i, row['true_val'], y_draws))
+                        ydraws_miss_leaves.append((i, node, row['true_val'], y_draws))
                     else:
-                        ydraws_obs[node].append((i, row['true_val'], y_draws))
+                        ydraws_obs.append((i, node, row['true_val'], y_draws))
                 else:
                     parent = self.node_child_parent[node]
                     y_draws = base_rate_draws[parent] * np.exp(u_draws[node])
@@ -203,14 +205,14 @@ class Coverage:
                         else:
                             y_draws *= np.exp(values)
                     if row['hold_out']:
-                        ydraws_miss_leaves[node].append((i, row['true_val'], y_draws))
+                        ydraws_miss_leaves.append((i, node, row['true_val'], y_draws))
                     else:
-                        ydraws_obs[node].append((i, row['true_val'], y_draws))
+                        ydraws_obs.append((i, node, row['true_val'], y_draws))
 
         return ydraws_obs, ydraws_miss_leaves, ydraws_miss_branch
 
     def plot_draws(self, method, ydraws_obs, ydraws_miss_leaves=None, ydraws_miss_branch=None,
-                   samples_per_type=2, range=None):
+                   samples_per_type=2, yrange=None, legend=True):
         n_plots = 1
         if ydraws_miss_leaves is not None:
             n_plots += 1
@@ -218,57 +220,72 @@ class Coverage:
             n_plots += len(ydraws_miss_branch)
         fig, axs = plt.subplots(1, n_plots, figsize=(n_plots*5, 5))
 
-        def draw_samples(ydraws):
-            draws_all = []
-            for node, draws in ydraws.items():
-                draws_all.extend([(node, draw) for draw in draws])
+        def draw_samples(draws_all):
             n = len(draws_all)
             idx = np.random.choice(n, size=samples_per_type, replace=False)
             samples = []
             labels = []
+            data_ids = []
             for i in idx:
-                samples.append(draws_all[i][1][2] - draws_all[i][1][1])
-                labels.append(draws_all[i][0])
-            return samples, labels
+                samples.append(draws_all[i][3] - draws_all[i][2])
+                labels.append(draws_all[i][1])
+                data_ids.append(draws_all[i][0])
+            return samples, labels, data_ids
 
         # ---- plot coverage for observed data -----------
-        samples_draws_obs, labels_obs = draw_samples(ydraws_obs)
+        samples_draws_obs, labels_obs, data_obs_ids = draw_samples(ydraws_obs)
 
         bp = axs[0].boxplot(samples_draws_obs, patch_artist=True, labels=labels_obs)
         axs[0].set_xticklabels(labels_obs)
         axs[0].set_title('on observed data')
-        if range is not None:
+        if yrange is not None:
             axs[0].set_ylim(range)
+        if legend:
+            axs[0].legend(bp["boxes"], data_obs_ids)
 
         # ---- plot coverage for data missing from leaves -------
         k_plot = 1
         if ydraws_miss_leaves is not None:
-            samples_draws_miss_leaves, labels_miss_leaves = draw_samples(ydraws_miss_leaves)
+            samples_draws_miss_leaves, labels_miss_leaves, data_miss_leaves_ids = draw_samples(ydraws_miss_leaves)
 
             bp = axs[k_plot].boxplot(samples_draws_miss_leaves, patch_artist=True, labels=labels_miss_leaves)
             axs[k_plot].set_xticklabels(labels_miss_leaves)
             axs[k_plot].set_title('on data missing from leaves')
-            if range is not None:
+            if yrange is not None:
                 axs[k_plot].set_ylim(range)
+            if legend:
+                axs[k_plot].legend(bp['boxes'], data_miss_leaves_ids)
 
             k_plot += 1
 
         if ydraws_miss_branch is not None:
             for node, node_draws in ydraws_miss_branch.items():
-                samples_draws_miss_branch, labels_miss_branch = draw_samples(node_draws)
+                samples_draws_miss_branch, labels_miss_branch, data_miss_branch_ids = draw_samples(node_draws)
                 bp = axs[k_plot].boxplot(samples_draws_miss_branch, patch_artist=True, labels=labels_miss_branch)
                 axs[k_plot].set_xticklabels(labels_miss_branch)
                 axs[k_plot].set_title('on data missing from branch '+node)
                 k_plot += 1
+                if legend:
+                    axs[k_plot].legend(bp['boxes'], data_miss_branch_ids)
         fig.suptitle('draw_value - true_value, method ' + method)
         plt.show()
 
-    def get_y_coverage(self, method, n_draws=100, n_run=10, n_sim=10, plot=True, samples_per_plot=5):
+    def get_y_coverage(self, method, n_draws=100, n_run=10, n_sim=10,
+                       plot=True, samples_per_plot=5, save_draws=True, yrange=None, legend=True):
         base_rate_dist, alpha_dist, u_dist = self.get_params_distribution(method, n_run, n_sim)
         print('--- drawing params samples --------')
         ydraws_obs, ydraws_miss_leaves, ydraws_miss_branch = self.draw_ys(base_rate_dist,
                                                                           alpha_dist, u_dist, n_draws)
+
+        if save_draws:
+            ydraws_all = ydraws_obs + ydraws_miss_leaves
+            for node, draws in ydraws_miss_branch.items():
+                ydraws_all.extend(draws)
+            df = pd.DataFrame(ydraws_all, columns=('data_id', 'node', 'true_val', 'draws'))
+            df.to_csv(self.file_path + 'ydraws_' + method + '.csv')
+
         if plot:
-            self.plot_draws(method, ydraws_obs, ydraws_miss_leaves, ydraws_miss_branch, samples_per_plot)
+            self.plot_draws(method, ydraws_obs, ydraws_miss_leaves, ydraws_miss_branch,
+                            samples_per_plot, yrange=yrange, legend=legend)
 
         return ydraws_obs, ydraws_miss_leaves, ydraws_miss_branch
