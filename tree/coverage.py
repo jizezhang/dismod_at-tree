@@ -3,6 +3,7 @@ from scipy.stats import norm
 from mixetree import MixETree
 import pandas as pd
 from collections import defaultdict
+import copy
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -12,6 +13,7 @@ class Coverage:
 
     def __init__(self, data, node_list, n_cov, file_path, holdout_nodes=None, holdout_leaves=None):
         self.data = data
+        self.measurement = copy.deepcopy(data['meas_val'].values)
         self.meas_std = data['meas_std'].values
         self.n_data = data.shape[0]
         self.n_cov = n_cov
@@ -28,6 +30,8 @@ class Coverage:
     def fit_oracle(self, file_path, iota_true, alpha_true, y=None):
         if y is not None:
             self.data['meas_val'] = y
+        else:
+            self.data['meas_val'] = self.measurement
         mtr = MixETree(self.data, self.node_list, self.n_cov, file_path, self.holdout_nodes, self.holdout_leaves)
         if self.node_child_parent is None:
             self.node_child_parent = mtr.node_child_parent
@@ -42,6 +46,8 @@ class Coverage:
     def fit_bottom(self, file_path, run_id=0, y=None):
         if y is not None:
             self.data['meas_val'] = y
+        else:
+            self.data['meas_val'] = self.measurement
         mtr = MixETree(self.data, self.node_list, self.n_cov, file_path, self.holdout_nodes, self.holdout_leaves)
         if self.node_child_parent is None:
             self.node_child_parent = mtr.node_child_parent
@@ -63,6 +69,8 @@ class Coverage:
     def fit_top_bottom(self, file_path, run_id=0, y=None, no_leaf=False):
         if y is not None:
             self.data['meas_val'] = y
+        else:
+            self.data['meas_val'] = self.measurement
         mtr = MixETree(self.data, self.node_list, self.n_cov, file_path, self.holdout_nodes, self.holdout_leaves)
         if self.node_child_parent is None:
             self.node_child_parent = mtr.node_child_parent
@@ -74,6 +82,8 @@ class Coverage:
     def fit_cascade(self, file_path, run_id, y=None, n_sim=10, use_lambda=False, skip=False):
         if y is not None:
             self.data['meas_val'] = y
+        else:
+            self.data['meas_val'] = self.measurement
         mtr = MixETree(self.data, self.node_list, self.n_cov, file_path, self.holdout_nodes, self.holdout_leaves)
         if self.node_child_parent is None:
             self.node_child_parent = mtr.node_child_parent
@@ -107,13 +117,14 @@ class Coverage:
 
         run_model(method)
 
-        yfit = self.data[method + '_0_avgint'].values.reshape((-1, 1))
+        yfit = self.data[method + '_0_avgint'].values.reshape((-1, 1))*np.ones((self.n_data, 1))
         ysim = np.random.randn(self.n_data, n_run) * self.meas_std.reshape((-1, 1)) + yfit
 
         for k in range(n_run):
             print('---- run', (k+1), '--------')
             base_rate, alpha, u = run_model(method, k+1, ysim[:, k])
             integrate_result(base_rate, alpha, u)
+
 
         base_rate_dist = {}
         for node, values in base_rate_all.items():
@@ -299,7 +310,7 @@ class Coverage:
             df = pd.DataFrame(ydraws_all, columns=('data_id', 'node', 'true_val', 'draws', 'type'))
             df.to_csv(self.file_path + 'ydraws_' + method + '.csv')
 
-        self.data.to_csv(self.file_path + 'results_combined.csv')
+        self.data.to_csv(self.file_path + 'results_combined_r' + str(n_run) + '_d' + str(n_draws) + '.csv')
 
         if plot:
             self.plot_draws(method, ydraws_obs, ydraws_miss_leaves, ydraws_miss_branch,

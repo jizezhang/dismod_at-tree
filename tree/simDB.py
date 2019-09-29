@@ -282,7 +282,7 @@ class SimDB:
                   {'name': 'meas_noise_effect',    'value': 'add_var_scale_all'},
                   {'name': 'quasi_fixed',           'value': 'false'},
                   {'name': 'max_num_iter_fixed',    'value': '300'},
-                  {'name': 'print_level_fixed',     'value': '5'},
+                  {'name': 'print_level_fixed',     'value': '0'},
                   {'name': 'tolerance_fixed',       'value': '1e-4'},
              ]
 
