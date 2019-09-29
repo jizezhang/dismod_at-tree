@@ -53,6 +53,8 @@ class Coverage:
         for i in range(self.n_cov):
             values = [x['cov' + str(i + 1)] for k, x in mtr.alpha_est.items()]
             alphas_fit.append(np.median(values))
+        print('bottom alpha fit', alphas_fit)
+        mtr.reset()
         mtr.fit_low_level('bottom_'+str(run_id), {'alpha': (alphas_fit, [0] * self.n_cov, 'uniform')},
                           zero_sum=True, use_lambda=False, add_intercept=False, fit_fixed=True)
         # print('direct bottom level fit, elapsed ', time.time() - t0)
@@ -225,7 +227,7 @@ class Coverage:
     def plot_draws(self, method, ydraws_obs, ydraws_miss_leaves, ydraws_miss_branch, sample_idx, yrange=None):
 
         #ydraws_obs, ydraws_miss_leaves, ydraws_miss_branch = self.draw_ys(base_rate_dist, alpha_dist, u_dist, n_draws)
-
+        print('plot', method, sample_idx)
         n_plots = 1
         if ydraws_miss_leaves is not None:
             n_plots += 1
@@ -308,22 +310,25 @@ class Coverage:
     def sample_data(self, n_samples=3):
         sample_ids = [np.random.choice(self.obs_ids, n_samples), np.random.choice(self.miss_leaves_ids, n_samples)]
         for node, idx in self.miss_branch_ids.items():
-            sample_ids.append(np.random.choice(idx, n_samples))
+            sample_ids.append(np.random.choice(idx, n_samples, replace=False))
         return sample_ids
 
     def compare_methods(self, n_runs, n_draws, n_samples=3, n_sim=10, plot=False):
         iota_dist_all = {}
         alpha_dist_all = {}
         u_dist_all = {}
-        iota_dist_b, alpha_dist_b, u_dist_b, sample_idx = self.get_y_coverage('cascade', n_draws=n_draws, save_draws=True,
+        iota_dist_c, alpha_dist_c, u_dist_c, sample_idx = self.get_y_coverage('cascade', n_draws=n_draws, save_draws=True,
                                                                               n_run=n_runs, n_sim=n_sim, plot=plot,
                                                                               n_samples=n_samples)
+        print(sample_idx)
         iota_dist_tb, alpha_dist_tb, u_dist_tb, _ = self.get_y_coverage('top-bottom', n_draws=n_draws, save_draws=True,
                                                                         n_run=n_runs, n_sim=n_sim, plot=plot,
                                                                         sample_idx=sample_idx)
-        iota_dist_c, alpha_dist_c, u_dist_c, _ = self.get_y_coverage('bottom', n_draws=n_draws, save_draws=True,
+        print(sample_idx)
+        iota_dist_b, alpha_dist_b, u_dist_b, _ = self.get_y_coverage('bottom', n_draws=n_draws, save_draws=True,
                                                                      n_run=n_runs, n_sim=n_sim, plot=plot,
                                                                      sample_idx=sample_idx)
+        print(sample_idx)
         iota_dist_all['bottom'] = iota_dist_b
         iota_dist_all['top-bottom'] = iota_dist_tb
         iota_dist_all['cascade'] = iota_dist_c
@@ -338,56 +343,56 @@ class Coverage:
         return iota_dist_all, alpha_dist_all, u_dist_all, sample_idx
 
 
-def plot_draws(method, ydraws_obs, ydraws_miss_leaves, ydraws_miss_branch, sample_idx, yrange=None):
-
-    #ydraws_obs, ydraws_miss_leaves, ydraws_miss_branch = self.draw_ys(base_rate_dist, alpha_dist, u_dist, n_draws)
-
-    n_plots = 1
-    if ydraws_miss_leaves is not None:
-        n_plots += 1
-    if ydraws_miss_branch is not None:
-        n_plots += len(ydraws_miss_branch)
-    fig, axs = plt.subplots(1, n_plots, figsize=(n_plots*5, 5))
-    assert len(sample_idx) == n_plots
-
-    def draw_samples(draws_all, idx):
-        samples = []
-        labels = []
-        for draw in draws_all:
-            if draw[0] in idx:
-                samples.append(draw[3] - draw[2])
-                labels.append(draw[1])
-        return samples, labels
-
-    # ---- plot coverage for observed data -----------
-    samples_draws_obs, labels_obs = draw_samples(ydraws_obs, sample_idx[0])
-
-    bp = axs[0].boxplot(samples_draws_obs, patch_artist=True, labels=labels_obs)
-    axs[0].set_xticklabels(labels_obs)
-    axs[0].set_title('on observed data')
-    if yrange is not None:
-        axs[0].set_ylim(range)
-
-    # ---- plot coverage for data missing from leaves -------
-    k_plot = 1
-    if ydraws_miss_leaves is not None:
-        samples_draws_miss_leaves, labels_miss_leaves = draw_samples(ydraws_miss_leaves, sample_idx[k_plot])
-
-        bp = axs[k_plot].boxplot(samples_draws_miss_leaves, patch_artist=True, labels=labels_miss_leaves)
-        axs[k_plot].set_xticklabels(labels_miss_leaves)
-        axs[k_plot].set_title('on data missing from leaves')
-        if yrange is not None:
-            axs[k_plot].set_ylim(range)
-        k_plot += 1
-
-    if ydraws_miss_branch is not None:
-        for node, node_draws in ydraws_miss_branch.items():
-            samples_draws_miss_branch, labels_miss_branch = draw_samples(node_draws, sample_idx[k_plot])
-            bp = axs[k_plot].boxplot(samples_draws_miss_branch, patch_artist=True, labels=labels_miss_branch)
-            axs[k_plot].set_xticklabels(labels_miss_branch)
-            axs[k_plot].set_title('on data missing from branch '+node)
-            k_plot += 1
-    fig.suptitle('draw_value - true_value, method ' + method)
-
-    plt.savefig(file_path + method + '_boxplot.jpg')
-    #plt.show()
+# def plot_draws(method, ydraws_obs, ydraws_miss_leaves, ydraws_miss_branch, sample_idx, yrange=None):
+#
+#     #ydraws_obs, ydraws_miss_leaves, ydraws_miss_branch = self.draw_ys(base_rate_dist, alpha_dist, u_dist, n_draws)
+#
+#     n_plots = 1
+#     if ydraws_miss_leaves is not None:
+#         n_plots += 1
+#     if ydraws_miss_branch is not None:
+#         n_plots += len(ydraws_miss_branch)
+#     fig, axs = plt.subplots(1, n_plots, figsize=(n_plots*5, 5))
+#     assert len(sample_idx) == n_plots
+#
+#     def draw_samples(draws_all, idx):
+#         samples = []
+#         labels = []
+#         for draw in draws_all:
+#             if draw[0] in idx:
+#                 samples.append(draw[3] - draw[2])
+#                 labels.append(draw[1])
+#         return samples, labels
+#
+#     # ---- plot coverage for observed data -----------
+#     samples_draws_obs, labels_obs = draw_samples(ydraws_obs, sample_idx[0])
+#
+#     bp = axs[0].boxplot(samples_draws_obs, patch_artist=True, labels=labels_obs)
+#     axs[0].set_xticklabels(labels_obs)
+#     axs[0].set_title('on observed data')
+#     if yrange is not None:
+#         axs[0].set_ylim(range)
+#
+#     # ---- plot coverage for data missing from leaves -------
+#     k_plot = 1
+#     if ydraws_miss_leaves is not None:
+#         samples_draws_miss_leaves, labels_miss_leaves = draw_samples(ydraws_miss_leaves, sample_idx[k_plot])
+#
+#         bp = axs[k_plot].boxplot(samples_draws_miss_leaves, patch_artist=True, labels=labels_miss_leaves)
+#         axs[k_plot].set_xticklabels(labels_miss_leaves)
+#         axs[k_plot].set_title('on data missing from leaves')
+#         if yrange is not None:
+#             axs[k_plot].set_ylim(range)
+#         k_plot += 1
+#
+#     if ydraws_miss_branch is not None:
+#         for node, node_draws in ydraws_miss_branch.items():
+#             samples_draws_miss_branch, labels_miss_branch = draw_samples(node_draws, sample_idx[k_plot])
+#             bp = axs[k_plot].boxplot(samples_draws_miss_branch, patch_artist=True, labels=labels_miss_branch)
+#             axs[k_plot].set_xticklabels(labels_miss_branch)
+#             axs[k_plot].set_title('on data missing from branch '+node)
+#             k_plot += 1
+#     fig.suptitle('draw_value - true_value, method ' + method)
+#
+#     plt.savefig(file_path + method + '_boxplot.jpg')
+#     #plt.show()
