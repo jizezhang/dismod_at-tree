@@ -122,8 +122,11 @@ class Coverage:
 
         for k in range(n_run):
             print('---- run', (k+1), '--------')
-            base_rate, alpha, u = run_model(method, k+1, ysim[:, k])
-            integrate_result(base_rate, alpha, u)
+            try:
+                base_rate, alpha, u = run_model(method, k+1, ysim[:, k])
+                integrate_result(base_rate, alpha, u)
+            except:
+                print(method, 'failed at run', str(k+1))
 
 
         base_rate_dist = {}
@@ -178,13 +181,27 @@ class Coverage:
         # ---- sample u for missing branches based on empirical variance from their siblings
         u_samples = {}
         for node in self.holdout_nodes:
-            parent = '_'.join(node.split('_')[:-1])
-            samples = []
-            for kid in self.node_parent_children[parent]:
-                samples.extend(u_draws[kid])
-            u_std = np.std(samples)
-            u_samples[node] = np.random.randn(n_draws)*u_std
-            u_dist[node] = (0.0, u_std)
+            queue = [node]
+            while queue:
+                nd = queue.pop()
+                samples = []
+                level = len(nd.split('_'))
+                for v, draws in u_draws.items():
+                    if len(v.split('_')) == level:
+                        samples.extend(draws)
+                # parent = '_'.join(node.split('_')[:-1])
+                # samples = []
+                # for kid in self.node_parent_children[parent]:
+                #     samples.extend(u_draws[kid])
+                if len(samples) > 0:
+                    u_std = np.std(samples)
+                    u_samples[nd] = np.random.randn(n_draws)*u_std
+                    u_dist[nd] = (0.0, u_std)
+                else:
+                    u_samples[nd] = np.zeros(n_draws)
+                    u_dist[nd] = (0.0, 0.0)
+                for kid in self.node_parent_children[nd]:
+                    queue.insert(0, kid)
 
         for i, row in self.data.iterrows():
             if row['hold_out'] and row['hold_out_branch'] != row['node']:
@@ -193,6 +210,10 @@ class Coverage:
                 parent = '_'.join(node.split('_')[:-1])
                 y_draws = base_rate_draws[parent]*np.ones(n_draws)  # otherwise need deepcopy
                 y_draws *= np.exp(u_samples[node])
+                leaf = row['node']
+                while leaf != node:
+                    y_draws *= np.exp(u_samples[leaf])
+                    leaf = self.node_child_parent[leaf]
                 for name, values in alpha_draws[parent].items():
                     if name != 'a':
                         y_draws *= np.exp(values*row[name])
