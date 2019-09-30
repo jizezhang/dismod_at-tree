@@ -188,7 +188,7 @@ class Coverage:
             queue = [node]
             while queue:
                 nd = queue.pop()
-                print(nd)
+                #print(nd)
                 samples = []
                 level = len(nd.split('_'))
                 for v, draws in u_draws.items():
@@ -217,6 +217,7 @@ class Coverage:
                 y_draws *= np.exp(u_samples[node])
                 leaf = row['node']
                 while leaf != node:
+                    print(leaf)
                     y_draws *= np.exp(u_samples[leaf])
                     leaf = self.full_node_child_parent[leaf]
                 for name, values in alpha_draws[parent].items():
