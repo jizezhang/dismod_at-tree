@@ -19,7 +19,7 @@ hold_out = ['1_5', '1_4_2']
 hold_out_leaves = [('1_1_1_1', .4), ('1_2_2', .4)]
 cvr = Coverage(data, node_list, n_cov, file_path, hold_out, hold_out_leaves)
 
-iota_dist_all, alpha_dist_all, u_dist_all, sample_idx = cvr.compare_methods(n_draws=100, n_runs=10,
+iota_dist_all, alpha_dist_all, u_dist_all, sample_idx = cvr.compare_methods(n_draws=10, n_runs=1,
                                                                             plot=True, n_samples=5)
 
 print(sample_idx)

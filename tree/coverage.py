@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.stats import norm
 from mixetree import MixETree
+from simDB import SimDB
 import pandas as pd
 from collections import defaultdict
 import copy
@@ -26,6 +27,7 @@ class Coverage:
         self.obs_ids = []
         self.miss_leaves_ids = []
         self.miss_branch_ids = defaultdict(list)
+        self.full_node_parent_children = SimDB(data, node_list, n_cov).node_parent_children
 
     def fit_oracle(self, file_path, iota_true, alpha_true, y=None):
         if y is not None:
@@ -184,6 +186,7 @@ class Coverage:
             queue = [node]
             while queue:
                 nd = queue.pop()
+                print(nd)
                 samples = []
                 level = len(nd.split('_'))
                 for v, draws in u_draws.items():
@@ -200,7 +203,7 @@ class Coverage:
                 else:
                     u_samples[nd] = np.zeros(n_draws)
                     u_dist[nd] = (0.0, 0.0)
-                for kid in self.node_parent_children[nd]:
+                for kid in self.full_node_parent_children[nd]:
                     queue.insert(0, kid)
 
         for i, row in self.data.iterrows():
