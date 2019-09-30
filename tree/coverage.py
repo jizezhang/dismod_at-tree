@@ -27,7 +27,9 @@ class Coverage:
         self.obs_ids = []
         self.miss_leaves_ids = []
         self.miss_branch_ids = defaultdict(list)
-        self.full_node_parent_children = SimDB(data, node_list, n_cov).node_parent_children
+        full_db = SimDB(data, node_list, n_cov)
+        self.full_node_parent_children = full_db.node_parent_children
+        self.full_node_child_parent = full_db.node_child_parent
 
     def fit_oracle(self, file_path, iota_true, alpha_true, y=None):
         if y is not None:
@@ -216,7 +218,7 @@ class Coverage:
                 leaf = row['node']
                 while leaf != node:
                     y_draws *= np.exp(u_samples[leaf])
-                    leaf = self.node_child_parent[leaf]
+                    leaf = self.full_node_child_parent[leaf]
                 for name, values in alpha_draws[parent].items():
                     if name != 'a':
                         y_draws *= np.exp(values*row[name])
