@@ -58,7 +58,7 @@ class Coverage:
         if self.node_parent_children is None:
             self.node_parent_children = mtr.node_parent_children
         mtr.reset()
-        mtr.fit_low_level('bottom_'+str(run_id), zero_sum=True, use_lambda=False, add_intercept=False, fit_fixed=True)
+        mtr.fit_low_level('bottom_'+str(run_id), zero_sum=True, use_lambda=False, add_intercept=False, fit_fixed=False)
         alphas_fit = []
         for i in range(self.n_cov):
             values = [x['cov' + str(i + 1)] for k, x in mtr.alpha_est.items()]
@@ -279,7 +279,8 @@ class Coverage:
             labels = []
             for draw in draws_all:
                 if draw[0] in idx:
-                    samples.append(draw[3] - draw[2])
+                    #samples.append(draw[3] - draw[2])  # can also look at log(ratio)
+                    samples.append(np.log(draw[3]) - np.log(draw[2]))
                     labels.append(draw[1])
             return samples, labels
 
